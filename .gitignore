@@ -1,0 +1,8 @@
+#Experimental files
+01-baremetal-blinky/Makefile
+01-baremetal-blinky/helloworld.c
+02-stm32-flash-driver/archives/code1.c
+
+#Personal notes
+notes.md
+Powershell_commands.txt
