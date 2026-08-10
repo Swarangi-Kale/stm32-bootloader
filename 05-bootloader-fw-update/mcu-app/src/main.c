@@ -2,16 +2,7 @@
 #include "blinky.h"
 #include "chip_config_init.h"
 
-/*Place the app header in a seperate section in flash. Sicne it is const value, if not specified by attribute will be placed in the .rosection by default*/
 
-// __attribute__((section(".app_header"))) const app_header_t app_header = 
-// {
-//     .ota_flag = 0,
-//     .magic_number = 0xDEADBEEF,
-//     .size = 0, // This will be filled by the build system
-//     .crc = 0,  // This will be filled by the build system
-//     .version = 1
-// }; 
 static inline void __enable_irq(void) {
     __asm volatile ("cpsie i");
 }

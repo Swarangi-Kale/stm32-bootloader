@@ -23,6 +23,7 @@ DEPS += ../../../Common_Drivers/inc/systick.h
 DEPS += ../../../Common_Drivers/inc/simple-timer.h
 DEPS += ../../../Common_Drivers/inc/flash.h
 DEPS += ../shared/inc/firmware_info.h
+DEPS += ../shared/inc/boot_status.h
 
 SRCS = src/startup.c src/comms.c
 SRCS += src/bootloader.c

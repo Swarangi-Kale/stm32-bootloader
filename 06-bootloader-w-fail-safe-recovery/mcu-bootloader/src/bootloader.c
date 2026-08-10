@@ -9,6 +9,7 @@
 #include "flash.h"
 #include "crc.h"
 #include "firmware_info.h"
+#include "boot_status.h"
 
 
 //flash layout
@@ -38,7 +39,7 @@
 #define SYNC_DATA2 0x2A
 #define SYNC_DATA3 0x78
 
-#define DEFAULT_TIMEOUT 5000
+#define DEFAULT_TIMEOUT 1000
 
 #define NVIC_ICER_REG_ADDR 0xE000E180
 #define NVIC_ICPR_REG_ADDR 0xE000E280
@@ -82,10 +83,11 @@ void disable_inits_before_jump(){
     *(volatile uint32_t*)0x40000400 &= ~(1 << 0); // TIM3_CR1: counter off
 
     // Fully reset the UART peripheral used by the bootloader (adjust to your actual instance)
-    *(volatile uint32_t*)0x4002102c |= (1<<17);   // pulse reset — deasserts any latched IRQ line
+    *(volatile uint32_t*)0x4002102c |= (1<<17);   // assert reset
+    *(volatile uint32_t*)0x4002102c &= ~(1<<17);  // deassert reset — peripheral is now live again
     
-    // *(volatile uint32_t *)NVIC_ICER_REG_ADDR = 0xFFFFFFFF;  // disable all IRQs
-    // *(volatile uint32_t *)NVIC_ICPR_REG_ADDR = 0xFFFFFFFF; // clear all pending IRQs
+    *(volatile uint32_t *)NVIC_ICER_REG_ADDR = 0xFFFFFFFF;  // disable all IRQs
+    *(volatile uint32_t *)NVIC_ICPR_REG_ADDR = 0xFFFFFFFF; // clear all pending IRQs
 }
 
 
@@ -184,6 +186,16 @@ void system_reset(){
     while (1) { /* wait for reset */ }
 }
 
+void configure_iwdg(uint32_t timeout_ms) {
+    IWDG_KR = 0x5555;              // unlock
+    while(IWDG_SR & (0x1));
+    IWDG_PR = (110);        // prescaler = 8, tune with reload for your timeout, LSI freq is 32kHz
+    IWDG_RLR = 32000/256 * timeout_ms/1000; //clk_freq/prescalar * timeout in seconds
+    IWDG_KR = 0xAAAA;              // reload
+    IWDG_KR = 0xCCCC;              // start IWDG
+}
+
+
 
 int main(){
 
@@ -199,7 +211,9 @@ int main(){
     *(volatile uint32_t *)0xE000ED0C |= (0x0000 << 16);
     simple_timer_setup(&timer, DEFAULT_TIMEOUT, false);
 
-    int i = 0;
+    backup_domain_unlock();
+    uint32_t status = boot_status_read();
+    // boot_status_write(0x00000000);
 
     while(state != BL_STATE_DONE){
         if(state == BL_STATE_SYNC){
@@ -219,9 +233,7 @@ int main(){
                     comms_write(&temp_packet_bl);
                     simple_timer_reset(&timer);
                     state = BL_STATE_WAIT_FOR_UPDATE_REQ;
-                    i=0;
-                } else if(i>=4) {
-                    i = 0;
+                } else{
                     check_for_timeout();
                 }
             } else{
@@ -356,16 +368,19 @@ int main(){
         }
     }
     
-    // disable_inits_before_jump();
-    // Relocate vector table to app
-    // *(volatile uint32_t*)0xE000ED08 = APP_START_ADDR;
-    
-    if(validate_firmware_image()){
+
+    if (status == BOOT_MAGIC_CONFIRMED || ((status & 0x1111) == 0) /* erased/first-ever boot */) {
+        // last app boot was good (or this is a fresh chip) -> try to run it
+        boot_status_write(BOOT_MAGIC_PENDING);
+        configure_iwdg(10000);   // arm a 4s watchdog window
         jump_to_app();
+    } else {
+        // status is PENDING (never confirmed) or FAILED -> app is bad
+        // fall through to your existing UART sync/update-wait loop
+        // comms_create_single_byte_packet(&temp_packet_bl, BL_PACKET_UPDATE_SUCCESSFUL_DATA0);
+        uart_transmit_byte('N');
     }
-    else{
-        system_reset();
-    }
+    
     //Never return
 
     return 0;
