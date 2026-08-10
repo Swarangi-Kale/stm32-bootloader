@@ -6,16 +6,16 @@ OBJCOPY = arm-none-eabi-objcopy
 CFLAGS  = -mcpu=cortex-m0plus -mthumb -O0 -g \
           -Wall -fdata-sections -ffunction-sections	\
 		  -Iinc \
-		  -I../../../Common_Drivers/inc	\
+		  -I../Common_Drivers/inc	\
 		  -I../shared/inc
 
 LDFLAGS = -T stm32g070.ld -mcpu=cortex-m0plus -mthumb \
           -Wl,--gc-sections -nostartfiles	\
 		  -Wl,-Map=$(TARGET).map
 
-DEPS = inc/blinky.h ../shared/inc/firmware_info.h ../shared/inc/boot_status.h ../../../Common_Drivers/inc/chip_config_init.h ../../../Common_Drivers/inc/uart.h ../../../Common_Drivers/inc/ringbuffer.h
+DEPS = inc/blinky.h ../shared/inc/firmware_info.h ../shared/inc/boot_status.h ../Common_Drivers/inc/chip_config_init.h ../Common_Drivers/inc/uart.h ../Common_Drivers/inc/ringbuffer.h
 
-SRCS = src/main.c src/app_header.c src/blinky.c src/startup.c ../../../Common_Drivers/src/chip_config_init.c ../../../Common_Drivers/src/uart.c ../../../Common_Drivers/src/ringbuffer.c
+SRCS = src/main.c src/app_header.c src/blinky.c src/startup.c ../Common_Drivers/src/chip_config_init.c ../Common_Drivers/src/uart.c ../Common_Drivers/src/ringbuffer.c
 
 
 # ASMS    = src/bootloader.s

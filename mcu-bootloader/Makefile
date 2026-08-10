@@ -6,7 +6,7 @@ OBJCOPY = arm-none-eabi-objcopy
 CFLAGS  = -mcpu=cortex-m0plus -mthumb -O0 -g \
           -Wall -fdata-sections -ffunction-sections	\
 		  -Iinc\
-		  -I../../../Common_Drivers/inc	\
+		  -I../Common_Drivers/inc	\
 		  -I../shared/inc
 
 LDFLAGS = -T stm32g070.ld -mcpu=cortex-m0plus -mthumb \
@@ -14,27 +14,27 @@ LDFLAGS = -T stm32g070.ld -mcpu=cortex-m0plus -mthumb \
 		  -Wl,-Map=$(TARGET).map
 
 DEPS = inc/comms.h
-DEPS += ../../../Common_Drivers/inc/uart.h
-DEPS += ../../../Common_Drivers/inc/ringbuffer.h
-DEPS += ../../../Common_Drivers/inc/chip_config_init.h
-DEPS += ../../../Common_Drivers/inc/crc.h
-DEPS += ../../../Common_Drivers/inc/blinky.h
-DEPS += ../../../Common_Drivers/inc/systick.h
-DEPS += ../../../Common_Drivers/inc/simple-timer.h
-DEPS += ../../../Common_Drivers/inc/flash.h
+DEPS += ../Common_Drivers/inc/uart.h
+DEPS += ../Common_Drivers/inc/ringbuffer.h
+DEPS += ../Common_Drivers/inc/chip_config_init.h
+DEPS += ../Common_Drivers/inc/crc.h
+DEPS += ../Common_Drivers/inc/blinky.h
+DEPS += ../Common_Drivers/inc/systick.h
+DEPS += ../Common_Drivers/inc/simple-timer.h
+DEPS += ../Common_Drivers/inc/flash.h
 DEPS += ../shared/inc/firmware_info.h
 DEPS += ../shared/inc/boot_status.h
 
 SRCS = src/startup.c src/comms.c
 SRCS += src/bootloader.c
-SRCS += ../../../Common_Drivers/src/chip_config_init.c
-SRCS += ../../../Common_Drivers/src/ringbuffer.c
-SRCS += ../../../Common_Drivers/src/uart.c
-SRCS += ../../../Common_Drivers/src/crc.c
-SRCS += ../../../Common_Drivers/src/blinky.c
-SRCS += ../../../Common_Drivers/src/systick.c
-SRCS += ../../../Common_Drivers/src/simple-timer.c
-SRCS += ../../../Common_Drivers/src/flash.c
+SRCS += ../Common_Drivers/src/chip_config_init.c
+SRCS += ../Common_Drivers/src/ringbuffer.c
+SRCS += ../Common_Drivers/src/uart.c
+SRCS += ../Common_Drivers/src/crc.c
+SRCS += ../Common_Drivers/src/blinky.c
+SRCS += ../Common_Drivers/src/systick.c
+SRCS += ../Common_Drivers/src/simple-timer.c
+SRCS += ../Common_Drivers/src/flash.c
 
 OBJS    = $(SRCS:.c=.o) $(ASMS:.s=.o)
 
