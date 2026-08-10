@@ -2,7 +2,18 @@
 01-baremetal-blinky/Makefile
 01-baremetal-blinky/helloworld.c
 02-stm32-flash-driver/archives/code1.c
+04-packet-protocol/mcu-firmware/src/raw_code.c
+05-bootloader-fw-update/backup
+05-bootloader-fw-update/shared
+
 
 #Personal notes
 notes.md
 Powershell_commands.txt
+bugs_&_debugs.md
+03-bootloader-v1/notes_bootloader.md
+06-bootloader-w-fail-safe-recovery/ideation.txt
+
+
+#The files that are regenerated on cloning the repo
+04-packet-protocol/node_modules

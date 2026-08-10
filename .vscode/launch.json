@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "bl-debug",
+            "cwd": "${workspaceFolder}",
+            // "executable": "${workspaceFolder}/05-bootloader-fw-update/mcu-bootloader/main.elf",
+            "executable": "${workspaceFolder}/06-bootloader-w-fail-safe-recovery/mcu-bootloader/main.elf",
+            // "executable": "${workspaceFolder}/01-baremetal-blinky/blinky.elf",
+            // "executable": "04-packet-protocol/main.elf",
+            // "executable": "${workspaceFolder}/02-stm32-flash-driver/main.elf",
+            // "executable": "${workspaceFolder}/05-bootloader-fw-update/mcu-app/app.bin",
+            "request": "launch",
+            "type": "cortex-debug",
+            "runToEntryPoint": "main",
+            "servertype": "openocd",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32g0x.cfg"
+            ],
+            "device": "STM32G070RB",
+        }
+    ]
+}
