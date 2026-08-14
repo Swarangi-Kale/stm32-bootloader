@@ -17,15 +17,15 @@ The project has three parts that all cooperate over one interface (UART) and one
 firmware header format):
 
 ```
-┌─────────────────┐         UART, custom packet          ┌──────────────────────┐
-│   pc-updater     │  protocol (length+data+CRC8, ACK/RETX) │   mcu-bootloader     │
-│  (Node.js / TS,  │ ───────────────────────────────────►  │  0x08000000, 32 KB   │
-│   host machine)  │ ◄───────────────────────────────────  │  (Cortex-M0+)        │
+┌─────────────────┐         UART, custom packet            ┌──────────────────────┐
+│   pc-updater    │  protocol (length+data+CRC8, ACK/RETX) │   mcu-bootloader     │
+│  (Node.js / TS, │ ───────────────────────────────────►   │  0x08000000, 32 KB   │
+│   host machine) │ ◄───────────────────────────────────   │  (Cortex-M0+)        │
 └─────────────────┘                                        └──────────┬───────────┘
-                                                                        │ validates CRC32,
-                                                                        │ writes boot status,
-                                                                        │ jumps
-                                                                        ▼
+                                                                      │ validates CRC32,
+                                                                      │ writes boot status,
+                                                                      │ jumps
+                                                                      ▼
                                                              ┌──────────────────────┐
                                                              │      mcu-app         │
                                                              │  0x08008000, 96 KB   │
@@ -51,85 +51,95 @@ firmware header format):
 
 ---
 
-## 2. Features
+## 2. Design Highlights
 
-- **Custom, from-scratch UART bootloader** for STM32G070 — no ST bootloader ROM, no MCUboot, no
-  RTOS. State machine implemented directly in `mcu-bootloader/src/bootloader.c`.
-- **Reliable custom packet protocol** — fixed-size packets (1-byte length + 16-byte data + 1-byte
-  CRC8), with automatic-repeat-request behavior: a CRC mismatch on either side triggers a `RETX`
-  packet and the last packet is resent, so a noisy UART link doesn't silently corrupt the image.
-- **Two layers of integrity checking**:
-  - *Transport layer:* CRC8 on every 18-byte packet (protects each hop over the wire).
-  - *Image layer:* CRC32 computed over the application's code region and compared against a value
-    embedded in the firmware header, checked by the bootloader **before** it will ever jump to the
-    new application.
-- **Structured firmware header** (`firmware_info_t`) prepended to every application image —
-  sentinel value, target device ID, version, length, and CRC32 — so the bootloader can reject an
-  image that wasn't built for this device, is truncated, or doesn't match the expected device ID,
-  before touching it.
-- **ARMv6-M-compliant vector table placement** — the linker script forces the application's vector
-  table onto a 128-byte (`0x80`) boundary after the header, satisfying the Cortex-M0+ VTOR
-  alignment requirement, and the bootloader relocates `VTOR` to it before jumping.
+### Bootloader State Machine
+
+*[Placeholder: state machine + timeout mechanism diagram]*
+
+This is the UART update-protocol state machine — it governs how the bootloader talks to
+`pc-updater` and receives a new image, independent of whether it decides to trust and run that
+image afterward (see *Does the Firmware Actually Work?* below).
+
+| State | Action | Next state |
+|---|---|---|
+| `BL_STATE_SYNC` | Wait for the 4-byte sync sequence from the host | `BL_STATE_WAIT_FOR_UPDATE_REQ` |
+| `BL_STATE_WAIT_FOR_UPDATE_REQ` | Wait for an update request packet | `BL_STATE_DEVICE_ID_REQ` |
+| `BL_STATE_DEVICE_ID_REQ` → `BL_STATE_DEVICE_ID_RES` | Request and receive the device ID | `BL_STATE_FW_LENGTH_REQ` |
+| `BL_STATE_FW_LENGTH_REQ` → `BL_STATE_FW_LENGTH_RES` | Request and receive the firmware length | `BL_STATE_ERASE_APP` |
+| `BL_STATE_ERASE_APP` | Erase the application flash region | `BL_STATE_RECEIVE_FW` |
+| `BL_STATE_RECEIVE_FW` | Receive and flash the image chunk by chunk | `BL_STATE_DONE` |
+
+Any unexpected packet at a request/response step, or a timeout while waiting, aborts the update
+and the bootloader falls back to waiting at sync.
+
+---
+### Packet Protocol
+
+A custom packet protocol handles communication between the STM32 board and the host (PC) over
+UART, giving the update process a reliable, acknowledgement/retransmission-based transport instead
+of relying on a raw, unverified byte stream.
+
+---
+### Two Layers of Integrity Checking
+
+Before the bootloader ever trusts and jumps into a received image, it checks integrity at two
+separate levels:
+
+- **Transport layer** — every packet carries a CRC8. A mismatch on either side is caught as soon
+  as that packet arrives, catching corruption introduced during the UART transfer itself.
+- **Image layer** — once an image is fully received, the bootloader checks a structured firmware
+  header (`firmware_info_t`) prepended to it — sentinel value, target device ID, version, length,
+  and CRC32 — so it can reject an image that wasn't built for this device, is truncated, or
+  doesn't match the expected device ID. The CRC32 in that header is computed over the
+  application's code region and is verified by the bootloader before it will ever jump to the new
+  application.
+
+---
+### Does the Firmware Actually Work?
+
+Checking these two layers only confirms that the received *bytes* are intact — it says nothing
+about whether the new firmware actually runs correctly once the bootloader jumps into it. To guard
+against that, a **fail-safe recovery mechanism** is used, built around its own boot-status state
+machine. 
 - **Reset-survivable boot status via backup-domain registers** — a status word (erased /
-  `PENDING` / `CONFIRMED`) is written to a register in the backup domain, which is preserved across
-  a warm reset. This is what lets the bootloader tell "this app has never proven itself" apart from
-  "this app is known-good" even after a reset wipes SRAM.
+  `PENDING` / `CONFIRMED`) is written to a register in the backup domain, which is preserved
+  across a warm reset. This is what lets the bootloader tell "this app has never proven itself"
+  apart from "this app is known-good," even after a reset wipes SRAM.
 - **Watchdog-gated fail-safe recovery** — the bootloader marks the app `PENDING` and arms the
   independent watchdog (IWDG) *before* jumping. The application must explicitly write `CONFIRMED`
-  and then keep feeding the watchdog. If it crashes, hangs, or never gets that far, the IWDG resets
-  the chip — and on the next boot the status is still `PENDING`, so the bootloader refuses to jump
-  into the same bad image again and instead waits for a new update over UART.
-- **Clean bootloader → application handoff** — before jumping, the bootloader disables SysTick,
-  stops its own timer peripheral, resets the UART peripheral it was using, and masks/clears all
-  NVIC interrupts, so the application starts from a known peripheral state instead of inheriting
-  bootloader-configured interrupts or a pending IRQ.
-- **Padded, fixed-size bootloader image** (`pad-bootloader.py`) — guarantees the bootloader binary
-  is always exactly `0x8000` bytes, so the application's flash offset never drifts between builds.
-- **Host-side updater in TypeScript** — mirrors the exact packet protocol and header format used
-  on-device, computes the image CRC32 and patches the header client-side, and drives the full
-  handshake (sync → update request → device ID exchange → length exchange → chunked transfer →
-  completion) over a serial port.
+  and then keep feeding the watchdog. If it crashes, hangs, or never gets that far, the IWDG
+  resets the chip — and on the next boot the status is still `PENDING`, so the bootloader refuses
+  to jump into the same bad image again and instead waits for a new update over UART.
+
+State Machine:
+| Boot status (backup-domain register) | Bootloader's decision |
+|---|---|
+| Erased / `BOOT_MAGIC_CONFIRMED` | Mark `PENDING`, arm IWDG, jump to app |
+| `BOOT_MAGIC_PENDING` / `BOOT_MAGIC_FAILED` | Stay resident, wait for a new update over UART |
 
 ---
 
-## 3. Design Highlights
-
-### Why a backup register + watchdog instead of a dual-slot A/B swap (like MCUboot)?
-
-MCUboot and similar bootloaders keep two full copies of the application (primary/secondary slots)
-and swap between them — safe, but it costs a full extra flash region and a more complex swap
-algorithm. This project instead keeps **one** application slot and a **tiny piece of state** (one
-backup register) that answers a simpler question: *"did the thing I just jumped to ever call
-home?"* That trade-off fits a single 128 KB part far better than a two-slot scheme would, at the
-cost of not being able to instantly roll back to a known-good *previous* version — a new update
-still has to overwrite the only application slot there is.
-
-### The recovery state machine, as actually implemented
-
-| Boot status register (backup domain) | Bootloader's decision | Why |
-|---|---|---|
-| Erased (`0x00000000`) — first-ever boot | Trust it, write `PENDING`, arm IWDG, jump | A blank chip has no history to distrust |
-| `BOOT_MAGIC_CONFIRMED` | Trust it, write `PENDING`, arm IWDG, jump | The app proved itself alive on a previous boot |
-| `BOOT_MAGIC_PENDING` (unchanged since the last jump) | **Do not jump** — stay resident, wait for a new update over UART | The last app was jumped to but never confirmed itself — it crashed, hung, or was reset by the watchdog before it could |
-| `BOOT_MAGIC_FAILED` | **Do not jump** — stay resident, wait for a new update over UART | Reserved for an explicit fault-handler write-path (defined in `boot_status.h`; not currently written by any handler in this codebase — see Known Limitations) |
-
-The application side of the contract is two lines: write `BOOT_MAGIC_CONFIRMED` as close to the top
-of `main()` as possible, and feed `IWDG_KR` regularly afterward. Everything else — the watchdog
-timeout, the jump, the re-arming on the next boot — is the bootloader's responsibility.
-
-### Memory layout
+## 3. Memory Layout
 
 ```
 0x08000000 ┌───────────────────────────────┐
-           │  mcu-bootloader (32 KB)        │
+           │  mcu-bootloader (padded)      │
 0x08008000 ├───────────────────────────────┤
-           │  firmware_info_t header (36 B) │
+           │  firmware_info_t header (36 B)│
 0x08008024 ├───────────────────────────────┤  (padded to 0x08008080)
-           │  Vector table (0x80-aligned)   │
+           │  Vector table (0x80-aligned)  │
            ├───────────────────────────────┤
-           │  mcu-app code + data (96 KB)   │
+           │  mcu-app code + data (96 KB)  │
 0x08020000 └───────────────────────────────┘  end of 128 KB flash
 ```
+
+- The bootloader region (`0x08000000`–`0x08008000`) isn't fully occupied by bootloader code — the
+  actual binary only takes up part of it, and the remaining space is padded with `0xFF` bytes by a
+  Python post-build script (`pad-bootloader.py`), so the bootloader image is always exactly
+  `0x8000` bytes.
+- The padding after the firmware header exists to force the application's vector table onto a
+  128-byte (`0x80`) boundary, per ARMv6-M VTOR alignment requirements.
 
 ---
 
@@ -205,7 +215,7 @@ make clean
 
 ---
 
-## 7. Performing a Firmware Update (Usage)
+## 7. Steps to Perform a Firmware Update
 
 1. Build a new `mcu-app` image (`make` in `mcu-app`) and copy the resulting `app.bin` into
    `pc-updater/` as `application.bin`.
